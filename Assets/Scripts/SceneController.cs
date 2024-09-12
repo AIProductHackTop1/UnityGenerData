@@ -8,12 +8,15 @@ public class SceneController : MonoBehaviour {
     public int valImages;           
     public bool save = false;         
     public string pathToSave;
-    public bool grayscale = false;   
-    public float prcntOfNumGenObj;
+    public float prcntOfNumGenObj;  // Процентное соотношение количества объектов
+    public bool generateAllObjects;  // Булевская переменная для генерации всех объектов
+    public bool randomRotation;  // Булевская переменная для случайного вращения
+    public float prcntOfRotation;
+    public Vector3 rotationRange;  // Параметры для случайного вращения (например, углы по осям)
     public Camera[] captureCameras;   
     public GameObject[] prefabs;  
-    public Material[] materials;   
-    
+    public Material[] materials;
+    public bool grayscale = false;   
     private ShapePool pool;    
     private int frameCount = 0;  
 
@@ -29,34 +32,45 @@ public class SceneController : MonoBehaviour {
                 GenerateRandom();
                 Debug.Log($"FrameCount: {frameCount}");
             
-            
-            if (save) 
-                if (frameCount < trainingImages) {
-                    string filename = $"image_{frameCount.ToString().PadLeft(5, '0')}";
-                    synth.SaveMultipleCameras(filename, captureCameras, 2048, 2048, pathToSave);
-                } else if (frameCount < trainingImages + valImages) {
-                    int valFrameCount = frameCount - trainingImages;
-                    string filename = $"image_{valFrameCount.ToString().PadLeft(5, '0')}";
-                    synth.SaveMultipleCameras(filename, captureCameras, 512, 512, "captures/val");
-                }
+                if (save) 
+                    if (frameCount < trainingImages) {
+                        string filename = $"image_{frameCount.ToString().PadLeft(5, '0')}";
+                        synth.SaveMultipleCameras(filename, captureCameras, 2048, 2048, pathToSave);
+                    } else if (frameCount < trainingImages + valImages) {
+                        int valFrameCount = frameCount - trainingImages;
+                        string filename = $"image_{valFrameCount.ToString().PadLeft(5, '0')}";
+                        synth.SaveMultipleCameras(filename, captureCameras, 512, 512, "captures/val");
+                    }
             }
             frameCount++;
         }
     }
 
     // Функция генерации случайных объектов
-    void GenerateRandom() {
+void GenerateRandom() {
         pool.ReclaimAll();  // Возврат всех объектов обратно в пул
 
         // Генерация случайного количества объектов
         int totalPrefabs = prefabs.Length; 
         int minObjects = Mathf.CeilToInt(totalPrefabs * prcntOfNumGenObj); 
         int maxObjects = totalPrefabs - 1;         
-        int objectsThisTime = Random.Range(minObjects, maxObjects + 1);  // Генерация количества объектов
+        int objectsThisTime = generateAllObjects ? totalPrefabs : Random.Range(minObjects, maxObjects + 1);
 
         // Перемешиваем массив префабов
         List<GameObject> shuffledPrefabs = new List<GameObject>(prefabs);
         Shuffle(shuffledPrefabs);  // Функция перемешивания
+
+        // Генерация процента объектов, которые будут вращаться
+        int totalRotationObjects = Mathf.CeilToInt(objectsThisTime * prcntOfRotation);
+        List<int> rotationIndices = new List<int>(); // Список индексов объектов, которым будет придаваться вращение
+
+        // Заполняем список индексов
+        while (rotationIndices.Count < totalRotationObjects) {
+            int randomIndex = Random.Range(0, objectsThisTime);
+            if (!rotationIndices.Contains(randomIndex)) {
+                rotationIndices.Add(randomIndex);
+            }
+        }
 
         // Выбираем случайный материал
         int materialIndx = Random.Range(0, materials.Length);
@@ -64,7 +78,7 @@ public class SceneController : MonoBehaviour {
 
         // Генерируем объекты
         for (int i = 0; i < objectsThisTime; i++) {
-            GameObject prefab = shuffledPrefabs[i];  // Берем уникальный префаб из перемешанного списка
+            GameObject prefab = shuffledPrefabs[i];
 
             // Получаем объект из пула
             var shape = pool.Get((ShapeLabel)i);
@@ -83,13 +97,26 @@ public class SceneController : MonoBehaviour {
             }
             renderer.material = selectedMaterial;
 
-            // Присваиваем позицию, масштаб и поворот из префаба
+            // Присваиваем позицию и масштаб из префаба
             newObj.transform.position = prefab.transform.position;
-            newObj.transform.rotation = prefab.transform.rotation;
             newObj.transform.localScale = prefab.transform.localScale;
+
+            // Применяем случайное вращение только для объектов из списка rotationIndices
+            if (randomRotation && rotationIndices.Contains(i)) {
+                Vector3 originalRotation = prefab.transform.rotation.eulerAngles;
+
+                // Генерация случайных углов для Y и Z
+                float randomY = Random.Range(-rotationRange.y, rotationRange.y);
+                float randomZ = Random.Range(-rotationRange.z, rotationRange.z);
+
+                // Суммируем текущее вращение и случайное вращение
+                newObj.transform.rotation = Quaternion.Euler(originalRotation.x, originalRotation.y + randomY, originalRotation.z + randomZ);
+            } else {
+                // Иначе оставляем стандартное вращение префаба
+                newObj.transform.rotation = prefab.transform.rotation;
+            }
         }
 
-        
         synth.OnSceneChange(grayscale);
     }
 
