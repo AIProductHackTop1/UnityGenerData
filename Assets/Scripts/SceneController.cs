@@ -8,21 +8,31 @@ public class SceneController : MonoBehaviour {
     public int valImages;           
     public bool save = false;         
     public string pathToSave;
-    public float prcntOfNumGenObj;  // Процентное соотношение количества объектов
-    public bool generateAllObjects;  // Булевская переменная для генерации всех объектов
-    public bool randomRotation;  // Булевская переменная для случайного вращения
+    public float prcntOfNumGenObj; 
+    public bool generateAllObjects; 
+    public bool randomRotation; 
     public float prcntOfRotation;
-    public Vector3 rotationRange;  // Параметры для случайного вращения (например, углы по осям)
+    public Vector3 rotationRange; 
     public Camera[] captureCameras;   
     public GameObject[] prefabs;  
     public Material[] materials;
+
+    public float prcntOfNumNails;  // процент генерации nails
+    public bool generateAllNails;  // флаг генерации всех nails
+    public float prcntOfRotationNails;  // процент для вращения nails
+    public Vector3 rotationNailsRange;  // диапазон вращения nails
+    public GameObject[] nails;  // массив nails
+    public int a;
     public bool grayscale = false;   
-    private ShapePool pool;    
+
+    private ShapePool pool;
+    private ShapePool nailspool;
     private int frameCount = 0;  
 
     // Start is called before the first frame update
     void Start() {
-        pool = ShapePool.Create(prefabs); 
+        pool = ShapePool.Create(prefabs);
+        nailspool = ShapePool.Create(nails);
     }
 
     // Update is called once per frame
@@ -30,11 +40,12 @@ public class SceneController : MonoBehaviour {
         if (frameCount < trainingImages + valImages) {
             if (frameCount % 5 == 0) {
                 GenerateRandom();
+                GenerateRandomNails();  // генерация nails
                 Debug.Log($"FrameCount: {frameCount}");
             
                 if (save) 
                     if (frameCount < trainingImages) {
-                        string filename = $"image_{frameCount.ToString().PadLeft(5, '0')}";
+                        string filename = $"{a}_image_{frameCount.ToString().PadLeft(5, '0')}";
                         synth.SaveMultipleCameras(filename, captureCameras, 2048, 2048, pathToSave);
                     } else if (frameCount < trainingImages + valImages) {
                         int valFrameCount = frameCount - trainingImages;
@@ -46,25 +57,21 @@ public class SceneController : MonoBehaviour {
         }
     }
 
-    // Функция генерации случайных объектов
-void GenerateRandom() {
-        pool.ReclaimAll();  // Возврат всех объектов обратно в пул
+    // Генерация объектов из массива prefabs
+    void GenerateRandom() {
+        pool.ReclaimAll();  
 
-        // Генерация случайного количества объектов
         int totalPrefabs = prefabs.Length; 
         int minObjects = Mathf.CeilToInt(totalPrefabs * prcntOfNumGenObj); 
         int maxObjects = totalPrefabs - 1;         
         int objectsThisTime = generateAllObjects ? totalPrefabs : Random.Range(minObjects, maxObjects + 1);
 
-        // Перемешиваем массив префабов
         List<GameObject> shuffledPrefabs = new List<GameObject>(prefabs);
-        Shuffle(shuffledPrefabs);  // Функция перемешивания
+        Shuffle(shuffledPrefabs);  
 
-        // Генерация процента объектов, которые будут вращаться
         int totalRotationObjects = Mathf.CeilToInt(objectsThisTime * prcntOfRotation);
-        List<int> rotationIndices = new List<int>(); // Список индексов объектов, которым будет придаваться вращение
+        List<int> rotationIndices = new List<int>(); 
 
-        // Заполняем список индексов
         while (rotationIndices.Count < totalRotationObjects) {
             int randomIndex = Random.Range(0, objectsThisTime);
             if (!rotationIndices.Contains(randomIndex)) {
@@ -72,15 +79,12 @@ void GenerateRandom() {
             }
         }
 
-        // Выбираем случайный материал
         int materialIndx = Random.Range(0, materials.Length);
         var selectedMaterial = materials[materialIndx];
 
-        // Генерируем объекты
         for (int i = 0; i < objectsThisTime; i++) {
             GameObject prefab = shuffledPrefabs[i];
 
-            // Получаем объект из пула
             var shape = pool.Get((ShapeLabel)i);
             if (shape == null || shape.obj == null) {
                 Debug.LogError("Failed to retrieve object from pool.");
@@ -89,7 +93,6 @@ void GenerateRandom() {
 
             var newObj = shape.obj;
 
-            // Присваиваем материал объекту
             var renderer = newObj.GetComponent<Renderer>();
             if (renderer == null) {
                 Debug.LogError($"Object {newObj.name} does not have a Renderer component.");
@@ -97,23 +100,71 @@ void GenerateRandom() {
             }
             renderer.material = selectedMaterial;
 
-            // Присваиваем позицию и масштаб из префаба
             newObj.transform.position = prefab.transform.position;
             newObj.transform.localScale = prefab.transform.localScale;
 
-            // Применяем случайное вращение только для объектов из списка rotationIndices
             if (randomRotation && rotationIndices.Contains(i)) {
                 Vector3 originalRotation = prefab.transform.rotation.eulerAngles;
-
-                // Генерация случайных углов для Y и Z
                 float randomY = Random.Range(-rotationRange.y, rotationRange.y);
                 float randomZ = Random.Range(-rotationRange.z, rotationRange.z);
-
-                // Суммируем текущее вращение и случайное вращение
                 newObj.transform.rotation = Quaternion.Euler(originalRotation.x, originalRotation.y + randomY, originalRotation.z + randomZ);
             } else {
-                // Иначе оставляем стандартное вращение префаба
                 newObj.transform.rotation = prefab.transform.rotation;
+            }
+        }
+
+        synth.OnSceneChange(grayscale);
+    }
+
+    // Генерация объектов из массива nails
+    void GenerateRandomNails() {
+        nailspool.ReclaimAll();  
+
+        int totalNails = nails.Length; 
+        int minNails = Mathf.CeilToInt(totalNails * prcntOfNumNails); 
+        int maxNails = totalNails - 1;         
+        int nailsThisTime = generateAllNails ? totalNails : Random.Range(minNails, minNails);
+
+        List<GameObject> shuffledNails = new List<GameObject>(nails);
+        Shuffle(shuffledNails);  
+
+        int totalRotationNails = Mathf.CeilToInt(nailsThisTime * prcntOfRotationNails);
+        List<int> rotationNailsIndices = new List<int>(); 
+
+        while (rotationNailsIndices.Count < totalRotationNails) {
+            int randomIndex = Random.Range(0, nailsThisTime);
+            if (!rotationNailsIndices.Contains(randomIndex)) {
+                rotationNailsIndices.Add(randomIndex);
+            }
+        }
+
+        for (int i = 0; i < nailsThisTime; i++) {
+            GameObject nail = shuffledNails[i];
+
+            var shape = nailspool.Get((ShapeLabel)i);
+            if (shape == null || shape.obj == null) {
+                Debug.LogError("Failed to retrieve object from pool.");
+                continue;
+            }
+
+            var newObj = shape.obj;
+
+            var renderer = newObj.GetComponent<Renderer>();
+            if (renderer == null) {
+                Debug.LogError($"Object {newObj.name} does not have a Renderer component.");
+                continue;
+            }
+
+            newObj.transform.position = nail.transform.position;
+            newObj.transform.localScale = nail.transform.localScale;
+
+            if (randomRotation && rotationNailsIndices.Contains(i)) {
+                Vector3 originalRotation = nail.transform.rotation.eulerAngles;
+                float randomY = Random.Range(-rotationNailsRange.y, rotationNailsRange.y);
+                float randomZ = Random.Range(-rotationNailsRange.z, rotationNailsRange.z);
+                newObj.transform.rotation = Quaternion.Euler(originalRotation.x, originalRotation.y + randomY, originalRotation.z + randomZ);
+            } else {
+                newObj.transform.rotation = nail.transform.rotation;
             }
         }
 
