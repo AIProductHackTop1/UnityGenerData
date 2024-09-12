@@ -167,8 +167,21 @@ public class ImageSynthesis : MonoBehaviour {
 			r.SetPropertyBlock(mpb);
 		}
 	}
-
-	public void Save(string filename, int width = -1, int height = -1, string path = "", int specificPass = -1)
+	
+	public void SaveMultipleCameras(string filename, Camera[] cameras, int width = -1, int height = -1, string path = "", int specificPass = -1)
+	{
+		for (int i = 0; i < cameras.Length; i++)
+		{
+			string cameraPath = Path.Combine(path, cameras[i].name);
+			if (!Directory.Exists(cameraPath))
+			{
+				Directory.CreateDirectory(cameraPath);
+			}
+			Save(filename, cameras[i], width, height, cameraPath, 0);
+		}
+	}
+	
+	public void Save(string filename, Camera cam, int width = -1, int height = -1, string path = "", int specificPass = -1)
 	{
 		if (width <= 0 || height <= 0)
 		{
@@ -185,74 +198,68 @@ public class ImageSynthesis : MonoBehaviour {
 
 		// execute as coroutine to wait for the EndOfFrame before starting capture
 		StartCoroutine(
-			WaitForEndOfFrameAndSave(pathWithoutExtension, filenameExtension, width, height, specificPass));
+			WaitForEndOfFrameAndSave(pathWithoutExtension, filenameExtension, cam, width, height, 0));
 	}
 
-	private IEnumerator WaitForEndOfFrameAndSave(string filenameWithoutExtension, string filenameExtension, int width, int height, int specificPass)
+	private IEnumerator WaitForEndOfFrameAndSave(string filenameWithoutExtension, string filenameExtension, Camera cam, int width, int height, int specificPass)
 	{
 		yield return new WaitForEndOfFrame();
-		Save(filenameWithoutExtension, filenameExtension, width, height, specificPass);
+		Save(filenameWithoutExtension, filenameExtension, width, height, specificPass, cam);
 	}
 
-	private void Save(string filenameWithoutExtension, string filenameExtension, int width, int height, int specificPass)
-	{
-        if (specificPass == -1) {
-		    foreach (var pass in capturePasses)
-		    	Save(pass.camera, filenameWithoutExtension + pass.name + filenameExtension, width, height, pass.supportsAntialiasing, pass.needsRescale);
-        } else {
-            var pass = capturePasses[0];
-		    Save(pass.camera, filenameWithoutExtension + pass.name + filenameExtension, width, height, pass.supportsAntialiasing, pass.needsRescale);
-            pass = capturePasses[specificPass];
-		    Save(pass.camera, filenameWithoutExtension + pass.name + filenameExtension, width, height, pass.supportsAntialiasing, pass.needsRescale);
+	private void Save(string filenameWithoutExtension, string filenameExtension, int width, int height, int specificPass, Camera cam)
+	    {
+	        if (specificPass == -1)
+	        {
+	            foreach (var pass in capturePasses)
+	            {
+	                SaveCapture(cam, filenameWithoutExtension + pass.name + filenameExtension, width, height, pass.supportsAntialiasing, pass.needsRescale);
+	            }
+	        }
+	        else
+	        {
+	            SaveCapture(cam, filenameWithoutExtension + capturePasses[specificPass].name + filenameExtension, width, height, capturePasses[specificPass].supportsAntialiasing, capturePasses[specificPass].needsRescale);
+	        }
+	    }
+
+    private void SaveCapture(Camera cam, string filename, int width, int height, bool supportsAntialiasing, bool needsRescale)
+    {
+        var mainCamera = GetComponent<Camera>();
+        var depth = 24;
+        var format = RenderTextureFormat.Default;
+        var readWrite = RenderTextureReadWrite.Default;
+        var antiAliasing = supportsAntialiasing ? Mathf.Max(1, QualitySettings.antiAliasing) : 1;
+
+        var finalRT = RenderTexture.GetTemporary(width, height, depth, format, readWrite, antiAliasing);
+        var renderRT = needsRescale ? RenderTexture.GetTemporary(mainCamera.pixelWidth, mainCamera.pixelHeight, depth, format, readWrite, antiAliasing) : finalRT;
+        var tex = new Texture2D(width, height, TextureFormat.RGB24, false);
+
+        var prevActiveRT = RenderTexture.active;
+        var prevCameraRT = cam.targetTexture;
+
+        RenderTexture.active = renderRT;
+        cam.targetTexture = renderRT;
+        cam.Render();
+
+        if (needsRescale)
+        {
+            RenderTexture.active = finalRT;
+            Graphics.Blit(renderRT, finalRT);
+            RenderTexture.ReleaseTemporary(renderRT);
         }
-	}
 
-	private void Save(Camera cam, string filename, int width, int height, bool supportsAntialiasing, bool needsRescale)
-	{
-		var mainCamera = GetComponent<Camera>();
-		var depth = 24;
-		var format = RenderTextureFormat.Default;
-		var readWrite = RenderTextureReadWrite.Default;
-		var antiAliasing = (supportsAntialiasing) ? Mathf.Max(1, QualitySettings.antiAliasing) : 1;
+        tex.ReadPixels(new Rect(0, 0, tex.width, tex.height), 0, 0);
+        tex.Apply();
 
-		var finalRT =
-			RenderTexture.GetTemporary(width, height, depth, format, readWrite, antiAliasing);
-		var renderRT = (!needsRescale) ? finalRT :
-			RenderTexture.GetTemporary(mainCamera.pixelWidth, mainCamera.pixelHeight, depth, format, readWrite, antiAliasing);
-		var tex = new Texture2D(width, height, TextureFormat.RGB24, false);
+        var bytes = tex.EncodeToPNG();
+        File.WriteAllBytes(filename, bytes);
 
-		var prevActiveRT = RenderTexture.active;
-		var prevCameraRT = cam.targetTexture;
+        cam.targetTexture = prevCameraRT;
+        RenderTexture.active = prevActiveRT;
 
-		// render to offscreen texture (readonly from CPU side)
-		RenderTexture.active = renderRT;
-		cam.targetTexture = renderRT;
-
-		cam.Render();
-
-		if (needsRescale)
-		{
-			// blit to rescale (see issue with Motion Vectors in @KNOWN ISSUES)
-			RenderTexture.active = finalRT;
-			Graphics.Blit(renderRT, finalRT);
-			RenderTexture.ReleaseTemporary(renderRT);
-		}
-
-		// read offsreen texture contents into the CPU readable texture
-		tex.ReadPixels(new Rect(0, 0, tex.width, tex.height), 0, 0);
-		tex.Apply();
-
-		// encode texture into PNG
-		var bytes = tex.EncodeToPNG();
-		File.WriteAllBytes(filename, bytes);					
-
-		// restore state and cleanup
-		cam.targetTexture = prevCameraRT;
-		RenderTexture.active = prevActiveRT;
-
-		Object.Destroy(tex);
-		RenderTexture.ReleaseTemporary(finalRT);
-	}
+        Destroy(tex);
+        RenderTexture.ReleaseTemporary(finalRT);
+    }
 
 	#if UNITY_EDITOR
 	private GameObject lastSelectedGO;
