@@ -38,7 +38,7 @@ public class SceneController : MonoBehaviour {
     // Update is called once per frame
     void Update() {
         if (frameCount < trainingImages + valImages) {
-            if (frameCount % 5 == 0) {
+            if (frameCount % 1 == 0) {
                 GenerateRandom();
                 GenerateRandomNails();  // генерация nails
                 Debug.Log($"FrameCount: {frameCount}");
