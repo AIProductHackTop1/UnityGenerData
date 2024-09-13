@@ -1,4 +1,5 @@
 # UnityGenerData
+![UnityInterface](UnityInterface.png)
 Генерация синтетического датасета паллетов для модели компьютерного зрения на основе следующих ресурсов: [video tutorial](https://www.youtube.com/watch?v=P4CCMvtUohA) и [github](https://github.com/stratospark/UnityImageSynthesisTutorial1/tree/master?tab=readme-ov-file).
 
 ### Начало работы
